@@ -31,7 +31,7 @@ tf.flags.DEFINE_boolean("log_device_placement", False, "Log placement of ops on 
 
 FLAGS = tf.flags.FLAGS
 print("\nParameters:")
-for attr, value in sorted(FLAGS.__flags.iteritems()):
+for attr, value in sorted(FLAGS.__flags.items()):
   print("{}={}".format(attr.upper(), value))
 print("")
 
@@ -65,14 +65,18 @@ with tf.Graph().as_default():
     allow_soft_placement=FLAGS.allow_soft_placement,
     log_device_placement=FLAGS.log_device_placement)
   sess = tf.Session(config=session_conf)
+  print("get flags filter_sizes: " + str(FLAGS.filter_sizes))
+  print("get flags num_filters: " + str(FLAGS.num_filters))
+  print("num_filter to list: " + str(list(map(int, FLAGS.num_filters.split(",")))))
+
   with sess.as_default():
     cnn = TextCNN(
       sequence_length=sequence_length,
       num_classes=2,
       vocab_size=len(vocabulary),
       embedding_size=FLAGS.embedding_dim,
-      filter_sizes=map(int, FLAGS.filter_sizes.split(",")),
-      num_filters=map(int, FLAGS.num_filters.split(",")),
+      filter_sizes=list(map(int, FLAGS.filter_sizes.split(","))),
+      num_filters=list(map(int, FLAGS.num_filters.split(","))),
       l2_reg_lambda=FLAGS.l2_reg_lambda)
 
     # Define Training procedure
@@ -85,11 +89,11 @@ with tf.Graph().as_default():
     grad_summaries = []
     for g, v in grads_and_vars:
       if g is not None:
-        grad_hist_summary = tf.histogram_summary("{}/grad/hist".format(v.name), g)
-        sparsity_summary = tf.scalar_summary("{}/grad/sparsity".format(v.name), tf.nn.zero_fraction(g))
+        grad_hist_summary = tf.summary.histogram("{}/grad/hist".format(v.name), g)
+        sparsity_summary = tf.summary.scalar("{}/grad/sparsity".format(v.name), tf.nn.zero_fraction(g))
         grad_summaries.append(grad_hist_summary)
         grad_summaries.append(sparsity_summary)
-    grad_summaries_merged = tf.merge_summary(grad_summaries)
+    grad_summaries_merged = tf.summary.merge(grad_summaries)
 
     # Output directory for models and summaries
     if FLAGS.checkpoint == "":
@@ -100,18 +104,18 @@ with tf.Graph().as_default():
       out_dir = FLAGS.checkpoint
 
     # Summaries for loss and accuracy
-    loss_summary = tf.scalar_summary("loss", cnn.loss)
-    acc_summary = tf.scalar_summary("accuracy", cnn.accuracy)
+    loss_summary = tf.summary.scalar("loss", cnn.loss)
+    acc_summary = tf.summary.scalar("accuracy", cnn.accuracy)
 
     # Train Summaries
-    train_summary_op = tf.merge_summary([loss_summary, acc_summary, grad_summaries_merged])
+    train_summary_op = tf.summary.merge([loss_summary, acc_summary, grad_summaries_merged])
     train_summary_dir = os.path.join(out_dir, "summaries", "train")
-    train_summary_writer = tf.train.SummaryWriter(train_summary_dir, sess.graph_def)
+    train_summary_writer = tf.summary.FileWriter(train_summary_dir, sess.graph_def)
 
     # Dev summaries
-    dev_summary_op = tf.merge_summary([loss_summary, acc_summary])
+    dev_summary_op = tf.summary.merge([loss_summary, acc_summary])
     dev_summary_dir = os.path.join(out_dir, "summaries", "dev")
-    dev_summary_writer = tf.train.SummaryWriter(dev_summary_dir, sess.graph_def)
+    dev_summary_writer = tf.summary.FileWriter(dev_summary_dir, sess.graph_def)
 
     # Checkpoint directory. Tensorflow assumes this directory already exists so we need to create it
     checkpoint_dir = os.path.abspath(os.path.join(out_dir, "checkpoints"))
@@ -121,11 +125,11 @@ with tf.Graph().as_default():
     saver = tf.train.Saver(tf.all_variables())
 
     # Initialize all variables
-    sess.run(tf.initialize_all_variables())
+    sess.run(tf.global_variables_initializer())
 
     ckpt = tf.train.get_checkpoint_state(os.path.join(FLAGS.checkpoint, 'checkpoints'))
     if ckpt and gfile.Exists(ckpt.model_checkpoint_path):
-      print "Reading model parameters from %s" % ckpt.model_checkpoint_path
+      print ("Reading model parameters from %s" % ckpt.model_checkpoint_path)
       saver.restore(sess, ckpt.model_checkpoint_path)
 
     def train_step(x_batch, y_batch):
@@ -167,6 +171,7 @@ with tf.Graph().as_default():
     # Training loop. For each batch...
     for batch in batches:
       x_batch, y_batch = zip(*batch)
+      print(len(x_batch))
       train_step(x_batch, y_batch)
       current_step = tf.train.global_step(sess, global_step)
       if current_step % FLAGS.evaluate_every == 0:
